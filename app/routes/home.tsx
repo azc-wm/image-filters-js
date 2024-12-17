@@ -2,25 +2,79 @@ import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
 import { useEffect, useRef, type ChangeEvent } from "react";
 
-export function meta({}: Route.MetaArgs) {
+export function meta({ }: Route.MetaArgs) {
   return [
     { title: "New React Router App" },
     { name: "description", content: "Welcome to React Router!" },
   ];
 }
-class ImgCell {
+
+interface ImgCellRenderer {
   x: number;
   y: number;
-  cellSize: number;
+  threshold: number;
+  color: string;
+  readonly ctx: CanvasRenderingContext2D;
+  draw(): void;
+}
+
+class SobelCellRenderer implements ImgCellRenderer {
+  x: number;
+  y: number;
+  threshold: number;
+  color: string;
+  ctx: CanvasRenderingContext2D;
+  magnitude: number;
+  angle: number;
+  maxMagnitude: MaxMagnitude;
+
+  constructor(x: number, y: number, threshold: number, color: string, magnitude: number, angle: number, maxMagnitude: MaxMagnitude, ctx: CanvasRenderingContext2D) {
+    this.x = x;
+    this.y = y;
+    this.threshold = threshold;
+    this.color = color;
+    this.magnitude = magnitude;
+    this.angle = angle;
+    this.maxMagnitude = maxMagnitude;
+    this.ctx = ctx;
+  }
+
+  draw() {
+    //this.ctx.fillStyle = this.color;
+
+    /*   if (this.x % 100 == 0 && this.y % 100 == 0)
+        console.log({
+          x: this.x,
+          y: this.y,
+          magnitude: this.magnitude,
+          max: this.maxMagnitude.get(),
+          threshold: this.magnitude / this.maxMagnitude.get() > this.threshold,
+        }) */
+
+      if (this.magnitude / this.maxMagnitude.get() > this.threshold) {
+       this.ctx.fillStyle = this.color;
+      } else {
+        this.ctx.fillStyle = 'black'
+      }
+      
+      this.ctx.fillRect(this.x, this.y, 1, 1)
+  }
+}
+
+
+class AsciiFilterCellRenderer implements ImgCellRenderer {
+  x: number;
+  y: number;
+  threshold: number;
   symbol: string;
   color: string;
+  ctx: CanvasRenderingContext2D;
 
-  #ctx: CanvasRenderingContext2D;
 
   constructor(
     x: number,
     y: number,
-    cellSize: number,
+    threshold: number,
     symbol: string,
     color: string,
     ctx: CanvasRenderingContext2D
@@ -28,22 +82,22 @@ class ImgCell {
     this.x = x;
     (this.y = y), (this.symbol = symbol);
     this.color = color;
-    this.#ctx = ctx;
-    this.cellSize = cellSize;
+    this.ctx = ctx;
+    this.threshold = threshold;
   }
 
   draw() {
-    this.#ctx.fillStyle = this.color;
-    this.#ctx.shadowColor = this.color;
-    
-    const rgbMedian = +this.color.substring(5, this.color.length -1).split(",").reduce((a,b) => +a + b)
-    
+    this.ctx.fillStyle = this.color;
+    this.ctx.shadowColor = this.color;
+
+    const rgbMedian = +this.color.substring(5, this.color.length - 1).split(",").reduce((a, b) => +a + b)
+
     if (rgbMedian > 380) {
-      this.#ctx.shadowColor = this.color;
-      this.#ctx.shadowBlur = this.cellSize * 2;
+      this.ctx.shadowColor = this.color;
+      this.ctx.shadowBlur = this.threshold * 2;
     }
 
-    this.#ctx.fillText(this.symbol, this.x, this.y, 10);
+    this.ctx.fillText(this.symbol, this.x, this.y, 10);
 
     // while the logic for shadows is kind of ok, they are 0 performant, so another canvas to replicat image and expand its size would be more performant
 
@@ -51,8 +105,24 @@ class ImgCell {
   }
 }
 
+class MaxMagnitude {
+  value: number;
+
+  constructor(init: number) {
+    this.value = init
+  }
+
+  get() {
+    return this.value;
+  }
+
+  set(value: number) {
+    this.value = value;
+  }
+}
+
 class ImgEffectProcessor {
-  #imageCellArray: Array<ImgCell> = [];
+  #imageCellArray: Array<ImgCellRenderer> = [];
   #symbols = [];
   #pixels: ImageData;
   #canvas: HTMLCanvasElement;
@@ -96,47 +166,141 @@ class ImgEffectProcessor {
 
   #convertToSymbol(averageColorValue: number) {
     // can be made dynamic
-    const symbols = [" ", ".", ",", "-", "~", "▪", "=", "⯀"];
+
+    // interesting tiling
+    // const symbols = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+    //const symbols = ['', '.', ':', '=','▤', '▦', '▧', '▩',]
+
+    const symbols = [" ", ".", ";", "=", "x", "░", "▒", "█"];
     return symbols[
       Math.max(0, Math.floor((averageColorValue * symbols.length) / 255) - 1)
     ];
   }
+  /*   // Ascii effect version -> Refactor into own class
+    #scanImage(cellSize: number) {
+      this.#imageCellArray = [];
+      for (let y = 0; y < this.#pixels.height; y += cellSize) {
+        for (let x = 0; x < this.#pixels.width; x += cellSize) {
+          const posX = x * 4;
+          const posY = y * 4;
+          const pos = posY * this.#pixels.width + posX;
+  
+          const pixel = this.#pixels.data;
+  
+          if (pixel[pos + 3] > 128) {
+            const red = pixel[pos];
+            const green = pixel[pos + 1];
+            const blue = pixel[pos + 2];
+            const color = `rgba(${red + 20},${green + 20},${blue + 20},0.6)`;
+            const averageColorValue = (red + green + blue) / 3;
+            const recolor = `rgb(${0},${averageColorValue},${0})`;
+            const symbol = this.#convertToSymbol(averageColorValue);
+            if (averageColorValue > 60)
+              this.#imageCellArray.push(
+                new AsciiFilterCellRenderer(x, y, cellSize, symbol, recolor, this.#ctx)
+              );
+          }
+        }
+      }
+      console.log(this.#imageCellArray);
+    } */
 
   #scanImage(cellSize: number) {
-    this.#imageCellArray = [];
-    for (let y = 0; y < this.#pixels.height; y += cellSize) {
-      for (let x = 0; x < this.#pixels.width; x += cellSize) {
+    // first we'll do a simple 3x3 sobel kernel, later we will make it dynamic.
+    const
+      sobelY = [
+        [-1, 0, -1],
+        [-2, 0, -2],
+        [-1, 0, -1]
+      ],
+      sobelX = [
+        [-1, -2, -1],
+        [0, 0, 0],
+        [-1, -2, -1]
+      ]
+
+    const delta = 1;
+
+    const max = new MaxMagnitude(0);
+ 
+
+    for (let y = 0; y < this.#pixels.height; y ++) {
+      for (let x = 0; x < this.#pixels.width; x ++) {
+        // now it will be constant but when kernels are dynamic it must be size/2 floored
+
+        const pixel = this.#pixels.data;
         const posX = x * 4;
         const posY = y * 4;
         const pos = posY * this.#pixels.width + posX;
 
-        const pixel = this.#pixels.data;
+        // later we will be able to choose luminance approach, naive or nuanced
+        const red = pixel[pos];
+        const green = pixel[pos + 1];
+        const blue = pixel[pos + 2];
 
-        if (pixel[pos + 3] > 128) {
-          const red = pixel[pos];
-          const green = pixel[pos + 1];
-          const blue = pixel[pos + 2];
-          const color = `rgba(${red + 20},${green + 20},${blue + 20},0.6)`;
-          const averageColorValue = (red + green + blue) / 3;
-          const recolor = `rgb(${0},${averageColorValue},${0})`;
-          const symbol = this.#convertToSymbol(averageColorValue);
-          if (averageColorValue > 60)
-            this.#imageCellArray.push(
-              new ImgCell(x, y, cellSize, symbol, recolor, this.#ctx)
+        let rLuminance = red * 299;
+        let gLuminance = green * 587;
+        let bLuminance = blue * 114;
+
+        let sobelYValue = 0;
+        sobelY.forEach(
+          (row, indexY) => {
+            indexY -= delta;
+            let sobelYRowValues = 0;
+            row.forEach(
+              (value, indexX) => {
+                if (y < indexY || y + indexY > this.#pixels.height || x < indexX || x + indexX > this.#pixels.width)
+                  return;
+
+                // add all values
+                sobelYRowValues += (rLuminance + gLuminance + bLuminance) * value
+              }
             );
-        }
+            // accumulate pixel value
+            sobelYValue += sobelYRowValues;
+          }
+        )
+
+        // ugly, but we dont care yet, this is playground not CODER OF THE YEAR
+        let sobelXValue = 0;
+        sobelX.forEach(
+          (row, indexY) => {
+            indexY -= delta;
+            let sobelXRowValues = 0;
+            row.forEach(
+              (value, indexX) => {
+                if (y < indexY || y + indexY > this.#pixels.height || x < indexX || x + indexX > this.#pixels.width)
+                  return;
+
+                // add all values
+                sobelXRowValues += (rLuminance + gLuminance + bLuminance) * value
+              }
+            );
+            // accumulate pixel value
+            sobelXValue += sobelXRowValues;
+          }
+        )
+
+        const color = `rgb(${red},${green},${blue})`;
+        const magnitude = Math.sqrt(Math.pow(sobelYValue, 2) + Math.pow(sobelYValue, 2));
+        if (magnitude > max.get())
+          max.set(magnitude);
+
+        this.#imageCellArray.push(
+          new SobelCellRenderer(x, y, cellSize / 100, color, magnitude, Math.atan2(sobelXValue, sobelYValue), max, this.#ctx)
+        )
       }
     }
-    console.log(this.#imageCellArray);
+    console.log(this.#imageCellArray)
+    console.log(this.#pixels.data)
   }
 
   render(cellSize: number = 1) {
     this.#scanImage(cellSize);
     this.#ctx.clearRect(0, 0, this.#canvas.width, this.#canvas.height);
-    this.#canvasEffects &&
-      this.#canvasEffects
-        .getContext("2d")!
-        .clearRect(0, 0, this.#canvasEffects.width, this.#canvasEffects.height);
+    /* this.#ctx.fillStyle = "#000000";
+    this.#ctx.fillRect(0, 0, this.#canvas.width, this.#canvas.height); */
+    
     this.#imageCellArray.forEach((iCell) => iCell.draw());
   }
 }
