@@ -209,14 +209,14 @@ class ImgEffectProcessor {
     // first we'll do a simple 3x3 sobel kernel, later we will make it dynamic.
     const
       sobelY = [
-        [-1, 0, -1],
-        [-2, 0, -2],
-        [-1, 0, -1]
+        [-1, 0, 1],
+        [-2, 0, 2],
+        [-1, 0, 1]
       ],
       sobelX = [
         [-1, -2, -1],
         [0, 0, 0],
-        [-1, -2, -1]
+        [1, 2, 1]
       ]
 
     const delta = 1;
