@@ -2,7 +2,7 @@ import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
 import { useEffect, useRef, type ChangeEvent } from "react";
 
-export function meta({ }: Route.MetaArgs) {
+export function meta({}: Route.MetaArgs) {
   return [
     { title: "New React Router App" },
     { name: "description", content: "Welcome to React Router!" },
@@ -28,7 +28,16 @@ class SobelCellRenderer implements ImgCellRenderer {
   angle: number;
   maxMagnitude: MaxMagnitude;
 
-  constructor(x: number, y: number, threshold: number, color: string, magnitude: number, angle: number, maxMagnitude: MaxMagnitude, ctx: CanvasRenderingContext2D) {
+  constructor(
+    x: number,
+    y: number,
+    threshold: number,
+    color: string,
+    magnitude: number,
+    angle: number,
+    maxMagnitude: MaxMagnitude,
+    ctx: CanvasRenderingContext2D
+  ) {
     this.x = x;
     this.y = y;
     this.threshold = threshold;
@@ -51,16 +60,56 @@ class SobelCellRenderer implements ImgCellRenderer {
           threshold: this.magnitude / this.maxMagnitude.get() > this.threshold,
         }) */
 
-      if (this.magnitude / this.maxMagnitude.get() > this.threshold) {
-       this.ctx.fillStyle = this.color;
-      } else {
-        this.ctx.fillStyle = 'black'
+    if (this.x % 4 != 0 || this.y % 4 != 0) return;
+
+    if (this.magnitude / this.maxMagnitude.get() > this.threshold) {
+      // respect original pixel color
+      // this.ctx.fillStyle = this.color;
+      // Map this to green intensity (0-255)
+      const greenIntensity = Math.floor((this.angle / (2 * Math.PI)) * 255);
+      // this.ctx.fillStyle = `hsl(${hue + 120}, 100%, 50%)`;
+      this.ctx.fillStyle = this.color; //`rgb(0,${greenIntensity},0)`;
+      console.log("angle", this.angle, "verd", greenIntensity);
+      // const symbols = ["↙", "←", "↖", "↑", "↗", "→", "↘", "↓"];
+      const symbols = ["/", "-", "\\", "|", "/", "-", "\\", "|"];
+      const sectorSize = (2 * Math.PI) / symbols.length;
+      const index = Math.floor(this.angle / sectorSize);
+
+      this.ctx.fillText(symbols[index], this.x, this.y);
+    } else {
+      // this.ctx.fillStyle = "black";
+
+      console.log(this.threshold);
+      if (this.x % 4 != 0 || this.y % 4 != 0) return;
+
+      const rgb = this.color.substring(4, this.color.length - 1).split(",");
+
+      const rgbMedian = +(+rgb[0] * 0.299 + +rgb[1] * 0.587 + +rgb[2] * 0.114);
+
+      // const recolor = `rgb(${0},${Math.min(rgbMedian + 25, 255)},${0})`;
+      // const symbols = [" ", ".", ":", "-", "=", "■"];
+      const symbols = [" ", "·", ":", "-", "=", "?", "&", "■", "■"];
+      const index = Math.max(
+        0,
+        Math.floor((rgbMedian / 255) * symbols.length) - 1
+      );
+
+      console.log(rgbMedian);
+
+      if (rgbMedian > 60) {
+        this.ctx.shadowColor = this.color;
+        this.ctx.shadowBlur = 16;
       }
-      
-      this.ctx.fillRect(this.x, this.y, 1, 1)
+
+      //  proves ascii
+      this.ctx.font = "8px arial"
+      this.ctx.fillStyle = this.color;
+      this.ctx.fillText(symbols[index], this.x, this.y, 10);
+    }
+
+    // this.ctx.fillRect(this.x, this.y, 1, 1);
   }
 }
-
 
 class AsciiFilterCellRenderer implements ImgCellRenderer {
   x: number;
@@ -69,7 +118,6 @@ class AsciiFilterCellRenderer implements ImgCellRenderer {
   symbol: string;
   color: string;
   ctx: CanvasRenderingContext2D;
-
 
   constructor(
     x: number,
@@ -90,7 +138,10 @@ class AsciiFilterCellRenderer implements ImgCellRenderer {
     this.ctx.fillStyle = this.color;
     this.ctx.shadowColor = this.color;
 
-    const rgbMedian = +this.color.substring(5, this.color.length - 1).split(",").reduce((a, b) => +a + b)
+    const rgbMedian = +this.color
+      .substring(5, this.color.length - 1)
+      .split(",")
+      .reduce((a, b) => +a + b);
 
     if (rgbMedian > 380) {
       this.ctx.shadowColor = this.color;
@@ -109,7 +160,7 @@ class MaxMagnitude {
   value: number;
 
   constructor(init: number) {
-    this.value = init
+    this.value = init;
   }
 
   get() {
@@ -206,26 +257,25 @@ class ImgEffectProcessor {
     } */
 
   #scanImage(cellSize: number) {
+    this.#imageCellArray = [];
     // first we'll do a simple 3x3 sobel kernel, later we will make it dynamic.
-    const
-      sobelY = [
-        [-1, 0, 1],
-        [-2, 0, 2],
-        [-1, 0, 1]
+    const sobelY = [
+        [1, 0, -1],
+        [2, 0, -2],
+        [1, 0, -1],
       ],
       sobelX = [
-        [-1, -2, -1],
+        [1, 2, 1],
         [0, 0, 0],
-        [1, 2, 1]
-      ]
+        [-1, -2, -1],
+      ];
 
     const delta = 1;
 
     const max = new MaxMagnitude(0);
- 
 
-    for (let y = 0; y < this.#pixels.height; y ++) {
-      for (let x = 0; x < this.#pixels.width; x ++) {
+    for (let y = 0; y < this.#pixels.height; y++) {
+      for (let x = 0; x < this.#pixels.width; x++) {
         // now it will be constant but when kernels are dynamic it must be size/2 floored
 
         const pixel = this.#pixels.data;
@@ -233,74 +283,107 @@ class ImgEffectProcessor {
         const posY = y * 4;
         const pos = posY * this.#pixels.width + posX;
 
-        // later we will be able to choose luminance approach, naive or nuanced
         const red = pixel[pos];
         const green = pixel[pos + 1];
         const blue = pixel[pos + 2];
 
-        let rLuminance = red * 299;
-        let gLuminance = green * 587;
-        let bLuminance = blue * 114;
+        // later we will be able to choose luminance approach, naive or nuanced
 
         let sobelYValue = 0;
-        sobelY.forEach(
-          (row, indexY) => {
-            indexY -= delta;
-            let sobelYRowValues = 0;
-            row.forEach(
-              (value, indexX) => {
-                if (y < indexY || y + indexY > this.#pixels.height || x < indexX || x + indexX > this.#pixels.width)
-                  return;
+        sobelY.forEach((row, indexY) => {
+          indexY -= delta;
+          let sobelYRowValues = 0;
+          row.forEach((value, indexX) => {
+            const nx = x + indexX - delta;
+            const ny = y + indexY - delta;
 
-                // add all values
-                sobelYRowValues += (rLuminance + gLuminance + bLuminance) * value
-              }
-            );
-            // accumulate pixel value
-            sobelYValue += sobelYRowValues;
-          }
-        )
+            if (
+              nx >= 0 &&
+              nx < this.#pixels.width &&
+              ny >= 0 &&
+              ny < this.#pixels.height
+            ) {
+              const npos = (ny * this.#pixels.width + nx) * 4;
+
+              const red = pixel[npos];
+              const green = pixel[npos + 1];
+              const blue = pixel[npos + 2];
+
+              let rLuminance = red * 0.299;
+              let gLuminance = green * 0.587;
+              let bLuminance = blue * 0.114;
+
+              // add all values
+              sobelYRowValues += (rLuminance + gLuminance + bLuminance) * value;
+            }
+          });
+          // accumulate pixel value
+          sobelYValue += sobelYRowValues;
+        });
 
         // ugly, but we dont care yet, this is playground not CODER OF THE YEAR
         let sobelXValue = 0;
-        sobelX.forEach(
-          (row, indexY) => {
-            indexY -= delta;
-            let sobelXRowValues = 0;
-            row.forEach(
-              (value, indexX) => {
-                if (y < indexY || y + indexY > this.#pixels.height || x < indexX || x + indexX > this.#pixels.width)
-                  return;
+        sobelX.forEach((row, indexY) => {
+          indexY -= delta;
+          let sobelXRowValues = 0;
+          row.forEach((value, indexX) => {
+            const nx = x + indexX - delta;
+            const ny = y + indexY - delta;
 
-                // add all values
-                sobelXRowValues += (rLuminance + gLuminance + bLuminance) * value
-              }
-            );
-            // accumulate pixel value
-            sobelXValue += sobelXRowValues;
-          }
-        )
+            if (
+              nx >= 0 &&
+              nx < this.#pixels.width &&
+              ny >= 0 &&
+              ny < this.#pixels.height
+            ) {
+              const npos = (ny * this.#pixels.width + nx) * 4;
+
+              const red = pixel[npos];
+              const green = pixel[npos + 1];
+              const blue = pixel[npos + 2];
+
+              let rLuminance = red * 0.299;
+              let gLuminance = green * 0.587;
+              let bLuminance = blue * 0.114;
+              // add all values
+              sobelXRowValues += (rLuminance + gLuminance + bLuminance) * value;
+            }
+          });
+          // accumulate pixel value
+          sobelXValue += sobelXRowValues;
+        });
 
         const color = `rgb(${red},${green},${blue})`;
-        const magnitude = Math.sqrt(Math.pow(sobelYValue, 2) + Math.pow(sobelYValue, 2));
-        if (magnitude > max.get())
-          max.set(magnitude);
+        const magnitude = Math.sqrt(
+          Math.pow(sobelYValue, 2) + Math.pow(sobelYValue, 2)
+        );
+        if (magnitude > max.get()) max.set(magnitude);
+
+        const angle = Math.atan2(sobelXValue, sobelYValue);
 
         this.#imageCellArray.push(
-          new SobelCellRenderer(x, y, cellSize / 100, color, magnitude, Math.atan2(sobelXValue, sobelYValue), max, this.#ctx)
-        )
+          new SobelCellRenderer(
+            x,
+            y,
+            cellSize / 100,
+            color,
+            magnitude,
+            (angle + Math.PI) % (2 * Math.PI),
+            max,
+            this.#ctx
+          )
+        );
       }
     }
-    console.log(this.#imageCellArray)
-    console.log(this.#pixels.data)
+    console.log(this.#imageCellArray);
+    console.log(this.#pixels.data);
   }
 
   render(cellSize: number = 1) {
     this.#scanImage(cellSize);
     this.#ctx.clearRect(0, 0, this.#canvas.width, this.#canvas.height);
-    /* this.#ctx.fillStyle = "#000000";
-    this.#ctx.fillRect(0, 0, this.#canvas.width, this.#canvas.height); */
-    
+    this.#ctx.fillStyle = "#000000";
+    this.#ctx.fillRect(0, 0, this.#canvas.width, this.#canvas.height);
     this.#imageCellArray.forEach((iCell) => iCell.draw());
   }
 }
@@ -366,7 +449,6 @@ export default function Home() {
           name="resolution"
           min="1"
           max="100"
-          defaultValue="5"
           onChange={handleResolutionChange}
         />
       </div>
